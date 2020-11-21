@@ -6,9 +6,13 @@ from collections.abc import Iterable
 from os import cpu_count
 from typing import Any, Callable, List, Optional
 
+from tqdm import tqdm
+
 
 class Runner:
-    def __init__(self, runner_type: str, num_workers: int, start_method: Optional[str] = None):
+    def __init__(
+        self, runner_type: str, num_workers: int, start_method: Optional[str] = None, progressbar: bool = True
+    ):
         """
         A class for executing a function on a list of input parameters. Each input parameter can also represent an
         iterable, which will be substituted into the function using an asterisk (func(*params)).
@@ -56,6 +60,8 @@ class Runner:
             assert start_method in ["spawn", "fork"]
             multiprocessing.set_start_method(start_method)
 
+        self.progressbar = progressbar
+
     def __call__(self, function: Callable, params_list: List[Any]) -> List[Any]:
         return self.run(function, params_list)
 
@@ -73,11 +79,13 @@ class Runner:
         else:
             raise NotImplementedError("Not implemented runner")
 
-    @staticmethod
-    def _run_in_loop(function: Callable, params_list: List[Any]) -> List[Any]:
+    def _run_in_loop(self, function: Callable, params_list: List[Any]) -> List[Any]:
         """
         Method execute function on list of parameters with python loop
         """
+        if self.progressbar:
+            params_list = tqdm(params_list, desc=f'Function "{function.__name__}" runned in "{self.runner_type}"')
+
         results_list = []
         for params in params_list:
             results_list.append(function(*params if isinstance(params, Iterable) else [params]))
@@ -99,13 +107,20 @@ class Runner:
         """
         Method execute function on list of parameters in multithread or multiprocess mode
         """
+        if self.progressbar:
+            progressbar = tqdm(
+                total=len(params_list),
+                desc=f'Function "{function.__name__}" runned in "{self.num_workers} {self.runner_type}"',
+            )
+        else:
+            progressbar = None
+
         params_list_iterator = iter(params_list)
 
         # The result of the task becomes available in a different order than the tasks are declared.
         # After completing all the tasks, they must be sorted in the order of their declaration.
         results_dict = {}
         idx = 0
-
         with specific_executor as executor:
             # Schedule the first N futures.  We don't want to schedule them all
             # at once, to avoid consuming excessive amounts of memory.
@@ -125,6 +140,9 @@ class Runner:
                     del futures[fut]
                     results_dict[fut2idx[fut]] = fut.result()
                     del fut
+
+                if progressbar:
+                    progressbar.update(idx - progressbar.n)
 
                 # Schedule the next set of futures.  We don't want more than N futures
                 # in the pool at a time, to keep memory consumption down.
@@ -148,9 +166,9 @@ def dummy_expression(i: int) -> float:
 
 
 def test_runner(num_samples: int):
-    runner_loop = Runner("loop", 1)
-    runner_thread = Runner("thread", cpu_count())
-    runner_process = Runner("process", cpu_count())
+    runner_loop = Runner("loop", 1, progressbar=True)
+    runner_thread = Runner("thread", cpu_count(), progressbar=True)
+    runner_process = Runner("process", cpu_count(), progressbar=True)
 
     input_list = [i for i in range(num_samples)]
     output_list = [dummy_expression(i) for i in input_list]
