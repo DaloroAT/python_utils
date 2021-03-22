@@ -2,7 +2,6 @@ import concurrent.futures
 import itertools
 import multiprocessing
 import warnings
-from collections.abc import Iterable
 from os import cpu_count
 from typing import Any, Callable, List, Optional
 
@@ -88,7 +87,7 @@ class Runner:
 
         results_list = []
         for params in params_list:
-            results_list.append(function(*params if isinstance(params, Iterable) else [params]))
+            results_list.append(function(*params if isinstance(params, (list, tuple)) else [params]))
         return results_list
 
     def _run_in_thread(self, function: Callable, params_list: List[Any]) -> List[Any]:
@@ -127,7 +126,7 @@ class Runner:
             futures = {}
             fut2idx = {}
             for params in itertools.islice(params_list_iterator, self.num_workers):
-                fut = executor.submit(function, *params if isinstance(params, Iterable) else [params])
+                fut = executor.submit(function, *params if isinstance(params, (list, tuple)) else [params])
                 futures[fut] = params
                 fut2idx[fut] = idx
                 idx += 1
@@ -147,7 +146,7 @@ class Runner:
                 # Schedule the next set of futures.  We don't want more than N futures
                 # in the pool at a time, to keep memory consumption down.
                 for params in itertools.islice(params_list_iterator, len(done)):
-                    fut = executor.submit(function, *params if isinstance(params, Iterable) else [params])
+                    fut = executor.submit(function, *params if isinstance(params, (list, tuple)) else [params])
                     futures[fut] = params
                     fut2idx[fut] = idx
                     idx += 1
